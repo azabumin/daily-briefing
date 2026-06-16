@@ -3,7 +3,7 @@ name: 毎朝ブリーフィング
 on:
   schedule:
     # 毎日 08:00 JST (= 23:00 UTC 前日)
-    - cron: '0 23 * * *'
+    - cron: '0 20 * * *'
   workflow_dispatch:  # 手動実行も可能
 
 jobs:
