@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-毎朝ブリーフィング - 株価・ニュース・AI要約をGmailで送信
+毎朝ブリーフィング - 株価・ニュースをGmailで送信 (AI無し版)
 対象銘柄: リベラウェア(218A.T), 理経(8226.T)
 """
 
@@ -15,10 +15,9 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone, timedelta
 
 # ── 設定 ──────────────────────────────────────────────
-GMAIL_USER   = os.environ["GMAIL_USER"]      # azabumin@gmail.com
-GMAIL_PASS   = os.environ["GMAIL_APP_PASS"]  # 16桁アプリパスワード
-TO_EMAIL     = os.environ.get("TO_EMAIL", GMAIL_USER)
-ANTHROPIC_KEY = os.environ["ANTHROPIC_API_KEY"]
+GMAIL_USER = os.environ["GMAIL_USER"]
+GMAIL_PASS = os.environ["GMAIL_APP_PASS"]
+TO_EMAIL   = os.environ.get("TO_EMAIL", GMAIL_USER)
 
 STOCKS = [
     {"code": "218A.T", "name": "リベラウェア"},
@@ -34,20 +33,19 @@ def get_stock(code, name):
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.loads(r.read())
-        result = data["chart"]["result"][0]
-        meta   = result["meta"]
+        meta   = data["chart"]["result"][0]["meta"]
         price  = meta.get("regularMarketPrice", 0)
         prev   = meta.get("chartPreviousClose", meta.get("previousClose", price))
         change = price - prev
         pct    = (change / prev * 100) if prev else 0
         arrow  = "🟢" if change >= 0 else "🔴"
         sign   = "+" if change >= 0 else ""
-        return f"{arrow} {name} ({code.replace('.T','')})  ¥{price:,.0f}  {sign}{change:+.0f} ({sign}{pct:.2f}%)"
+        return f"{arrow} {name} ({code.replace('.T','')})  ¥{price:,.0f}  {sign}{change:.0f}円 ({sign}{pct:.2f}%)"
     except Exception as e:
         return f"⚠️ {name} ({code}) 取得失敗: {e}"
 
 # ── RSSニュース取得 ───────────────────────────────────
-def get_rss(url, label, count=4):
+def get_rss(url, count=4):
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -61,43 +59,6 @@ def get_rss(url, label, count=4):
         return "\n".join(lines) if lines else "ニュース取得失敗"
     except Exception as e:
         return f"取得失敗: {e}"
-
-# ── Claude AI ブリーフィング ───────────────────────────
-def get_ai_briefing(stocks_text, jp_news, kr_news):
-    try:
-        prompt = f"""以下の情報をもとに、投資家向けの簡潔な朝のブリーフィングを日本語で200字以内で書いてください。
-
-【株価】
-{stocks_text}
-
-【日本ニュース】
-{jp_news}
-
-【韓国ニュース】
-{kr_news}
-
-市場への影響、注目点を簡潔にまとめてください。"""
-
-        payload = json.dumps({
-            "model": "claude-sonnet-4-6",
-            "max_tokens": 300,
-            "messages": [{"role": "user", "content": prompt}]
-        }).encode()
-
-        req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": ANTHROPIC_KEY,
-                "anthropic-version": "2023-06-01"
-            }
-        )
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = json.loads(r.read())
-        return data["content"][0]["text"].strip()
-    except Exception as e:
-        return f"AI ブリーフィング生成失敗: {e}"
 
 # ── メール送信 ────────────────────────────────────────
 def send_email(subject, body):
@@ -121,17 +82,8 @@ def main():
     stocks_text  = "\n".join(stocks_lines)
 
     # ニュース
-    jp_news = get_rss(
-        "https://www3.nhk.or.jp/rss/news/cat0.xml",
-        "NHK日本ニュース"
-    )
-    kr_news = get_rss(
-        "https://www.yonhapnewstv.co.kr/category/news/headline/feed/",
-        "韓国連合ニュース"
-    )
-
-    # AI ブリーフィング
-    ai_text = get_ai_briefing(stocks_text, jp_news, kr_news)
+    jp_news = get_rss("https://www3.nhk.or.jp/rss/news/cat0.xml")
+    kr_news = get_rss("https://www.yonhapnewstv.co.kr/category/news/headline/feed/")
 
     # メール本文
     body = f"""📊 毎朝ブリーフィング｜{date}
@@ -145,9 +97,6 @@ def main():
 
 ━━━ 韓国ニュース TOP4 (聯合ニュース) ━━━
 {kr_news}
-
-━━━ AI ブリーフィング ━━━
-{ai_text}
 
 {"="*40}
 配信時刻: {now.strftime("%H:%M")} JST
